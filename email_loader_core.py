@@ -33,8 +33,6 @@ class MsgLoader:
         self.mail = ""
         self.msgParser = MsgParser()
         self._downloaded_msg = []
-        self.db = ManagerStatDB()
-        self.db.create_connection(PATH_FOR_DB)
         self.login = ""
 
     def connect_mailbox(self, login: str, password: str, mailbox="inbox"):
@@ -79,7 +77,6 @@ class MsgLoader:
                     continue
                 if date_msg >= p_startdate:
                     list_msg.append((uid_msg, self.login, msg))
-                    self.db.add_downloaded_msg(self.login, uid_msg, date_msg)
                 else:
                     break
             return list_msg
@@ -134,7 +131,6 @@ class MsgLoader:
                 if int(start_uid) <= int(uid) <= int(end_uid):
                     temp_msg = self.get_msg_by_uid(uid)
                     temp_list_mag.append((uid, self.login, temp_msg))
-                    self.db.add_downloaded_msg(self.login, uid, self.msgParser.get_msg_date(temp_msg))
         return temp_list_mag
 
     def get_msg_from_period(self, startdate: datetime, enddate=datetime.date.today(), downloaddir="inbox"):
@@ -207,8 +203,6 @@ class MsgParser:
         self.sender = ""
         self.path_for_payload = ""
         self.path_for_msg = ""
-        self.db = ManagerStatDB()
-        self.db.create_connection(PATH_FOR_DB)
 
     def set_downloaded_msg_path(self, p_path_name):
         if not os.path.exists(p_path_name):
@@ -260,8 +254,8 @@ class MsgParser:
         logger.info("{}".format(
              "--- нашли письмо от: " + str(header_from)))
         path = os.path.join(self.path_for_payload, login)
-        # if not os.path.exists(path):
-        #     os.mkdir(path)
+        if not os.path.exists(path):
+            os.makedirs(path)
         for part in email_message.walk():
             filename = part.get_filename()
             if filename is not None:
@@ -273,8 +267,6 @@ class MsgParser:
             try:
                 with open(save_path, 'wb') as fp:
                     fp.write(part.get_payload(decode=1))
-                self.db.add_downloaded_payload(name=filename, size=os.path.getsize(save_path),
-                                               last_path=save_path, login=login, msg_uid=uid_msg)
                 logger.info("------ Сохранение вложения \"{}\" завершено".format(filename))
             except FileExistsError as e:
                 logger.error("Ошибка при создании файла приложения: {}".format(e))
