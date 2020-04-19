@@ -44,14 +44,18 @@ class MsgLoader:
             mailserver = "mail.ru"
         try:
             self.mail = imaplib.IMAP4_SSL('imap.' + mailserver)
-            status, data = self.mail.login(login, password)
+            self.mail.login(login, password)
             logger.info("Подключение к ящику {mailbox} успешно".format(mailbox=login))
-            print("Начинаем скачивать письма с {}".format(login))
             self.set_mailbox(mailbox)
             return True
         except:
-            logger.info("Подключение к ящику {mailbox} не удалось".format(mailbox=login))
+            logger.error("Подключение к ящику {mailbox} не удалось. Он будет пропущен".format(mailbox=login))
+            logger.debug("Ошибка: ", exc_info=True)
             return False
+
+    def set_msg_parser(self, p_msg_parser):
+        if isinstance(p_msg_parser, MsgParser):
+            self.msgParser = p_msg_parser
 
     def set_mailbox(self, mailbox):
         status, mess = self.mail.select(mailbox)
@@ -153,22 +157,44 @@ class MsgLoader:
                 result, msg = self.get_msg_by_uid(uid_msg)
                 if result:
                     msg_list.append(msg)  # Тело письма в необработанном виде
-                #     logger.debug("Письмо с uid {uid} - успешно скачано".format(uid=uid_msg))
-                # else:
-                #     logger.error("Письмо с uid {uid} - скачать не удалось!!!".format(uid=uid_msg))
+                    logger.debug("Письмо с uid {uid} - успешно скачано".format(uid=uid_msg))
+                else:
+                    logger.error("Письмо с uid {uid} - скачать не удалось!!!".format(uid=uid_msg))
             return True, msg_list
         else:
             logger.info("Не удалось найти письма за {date} ".format(date=date))
             return False, msg_list
 
     def get_msg_by_uid(self, uid):
-        print("Начали качать письмо " + str(uid))
         result, data = self.mail.uid('fetch', uid, '(RFC822)')  # Получаем тело письма (RFC822) для данного ID
-        print("Закончили качать письмо " + str(uid))
         if result == "OK":
             return data[0][1]  # Тело письма в необработанном виде
         else:
             logger.error("Не удалось прочитать письмо с заданным uid! uid: {}  result: {}".format(uid, result))
+            logger.debug(exc_info=True)
+            return False
+
+    def download_all_msg(self, count=ParamNotSet()):
+        status, data = self.mail.uid('search', None, "ALL")
+        if isinstance(count, ParamNotSet):
+            for p_uid in data[0].split():
+                self.download_msg(p_uid)
+        else:
+            for p_uid in data[0].split()[:-1][0:int(count)]:
+                self.download_msg(p_uid)
+
+    def download_msg(self, uid, is_download_msg=True, is_download_payload=True):
+        result, data = self.mail.uid('fetch', uid, '(RFC822)')  # Получаем тело письма (RFC822) для данного ID
+        temp_msg = data[0][1]
+        if result == "OK":
+            if is_download_msg:
+                self.msgParser.save_msg((uid, self.login, temp_msg))
+                logger.debug("Письмо {uid} сохранено".format(uid=uid))
+            if is_download_payload:
+                self.msgParser.save_msg_payload((uid, self.login, temp_msg))
+        else:
+            logger.error("Не удалось прочитать письмо с заданным uid! uid: {}  result: {}".format(uid, result))
+            logger.debug("Ошибка: ", exc_info=True)
             return False
 
 
@@ -179,8 +205,26 @@ class MsgParser:
     def __init__(self):
         self.header = ""
         self.sender = ""
+        self.path_for_payload = ""
+        self.path_for_msg = ""
         self.db = ManagerStatDB()
         self.db.create_connection(PATH_FOR_DB)
+
+    def set_downloaded_msg_path(self, p_path_name):
+        if not os.path.exists(p_path_name):
+            temp = p_path_name.replace("/", " ").replace("\\", " ").split()
+            os.makedirs(os.path.join(*temp))
+            self.path_for_msg = os.path.join(*temp)
+        else:
+            self.path_for_msg = p_path_name
+
+    def set_downloaded_payload_path(self, p_path_name):
+        if not os.path.exists(p_path_name):
+            temp = p_path_name.replace("/", " ").replace("\\", " ").split()
+            os.makedirs(os.path.join(*temp))
+            self.path_for_payload = os.path.join(*temp)
+        else:
+            self.path_for_payload = p_path_name
 
     def read_msg(self, p_msg):
         try:
@@ -196,27 +240,28 @@ class MsgParser:
         email_msg = self.read_msg(p_msg)
         return str(email.header.make_header(email.header.decode_header(email_msg['Date'])))
 
-    def save_msg(self, p_msg, path=""):
-        if not os.path.exists(path):
-            os.makedirs(path)
+    def save_msg(self, p_msg):
         name_msg = "uid_"+str(int(p_msg[0])) + "_" + str(p_msg[1])
-        with open(os.path.join(path, name_msg), "wb") as f:
+        save_path = os.path.join(self.path_for_msg, str(p_msg[1]))
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+        with open(os.path.join(save_path, name_msg), "wb") as f:
             f.write(p_msg[2])
+        logger.info("Сохранено письмо!")
 
 
-    def save_msg_payload(self, p_msg, path="", dirname="temp"):
+    def save_msg_payload(self, p_msg):
         uid_msg, login, msg = p_msg
         try:
             email_message = email.message_from_string(msg)
         except TypeError:
             email_message = email.message_from_bytes(msg)
-
-        # logger.info("{}".format(
-        #     "--- нашли письмо от: " + str(email.header.make_header(email.header.decode_header(email_message['From'])),
-        #     errors='replace')))
-        path = os.path.join(path, dirname)
-        if not os.path.exists(path):
-            os.makedirs(path)
+        header_from = email.header.make_header(email.header.decode_header(email_message['From']))
+        logger.info("{}".format(
+             "--- нашли письмо от: " + str(header_from)))
+        path = os.path.join(self.path_for_payload, login)
+        # if not os.path.exists(path):
+        #     os.mkdir(path)
         for part in email_message.walk():
             filename = part.get_filename()
             if filename is not None:
@@ -224,7 +269,7 @@ class MsgParser:
             if not filename:
                 continue
             save_path = os.path.join(path, filename)
-            # self.logger.info("------  нашли вложение {}".format(filename))
+            logger.info("------  нашли вложение {}".format(filename))
             try:
                 with open(save_path, 'wb') as fp:
                     fp.write(part.get_payload(decode=1))
@@ -389,6 +434,7 @@ if __name__ == "__main__":
     parser.add_argument('-lw', '--last_week', action="store_true", dest="is_lw")
     parser.add_argument('-lm', '--last_month', action="store_true", dest="is_lm")
     parser.add_argument('-ld', '--last_day', action="store_true", dest="is_ld")
+    parser.add_argument('-t', '--test', action="store_true", dest="is_test")
     args_list = parser.parse_args()
 
     if args_list.isNeedCreateDCF:
@@ -400,11 +446,26 @@ if __name__ == "__main__":
     path_for_email = config.get("SETTINGS", "file_with_mails", fallback=False)
     EDL = MsgLoader()
     MP = MsgParser()
+    """ 
+        Устанавливаем параметры сохранения писем и вложений согласно конфигу
+    """
+    path_for_save_payloads = config.get("SETTINGS", "path_for_save_payloads", fallback=False)
+    path_for_save_msg = config.get("SETTINGS", "path_for_save_msg", fallback=False)
+    if path_for_save_msg:
+        MP.set_downloaded_msg_path(path_for_save_msg)
+    if path_for_save_payloads:
+        MP.set_downloaded_payload_path(path_for_save_payloads)
+
+    EDL.set_msg_parser(MP)
+
     if not path_for_email:
         logger.error("Не указан файл с логинами и паролями к ящикам")
         exit(-1)
     mail_dict_name = config.get("SETTINGS", "file_with_mails", fallback=False)
     dict_mail = import_mail_login(mail_dict_name)
+    """
+        Выбор режима работы программы согласно агрументам командной строки
+    """
     if args_list.is_last_uid_mode:
         db = ManagerStatDB()
         db.create_connection(PATH_FOR_DB)
@@ -415,7 +476,7 @@ if __name__ == "__main__":
                 logger.error("Не удалось получить uid последнего письма из базы, для {}".format(mail))
                 continue
             for msg in EDL.get_msg_for_last_uid(last_uid):
-                MP.save_msg_payload(msg, dirname=mail)
+                MP.save_msg_payload(msg)
     elif args_list.is_period_date_mode:
         logger.info("Работа в режиме скачавания писем согласно периода запущена!")
         startdate = config.get("MODE_PARAMS", "start_date", fallback=False)
@@ -426,8 +487,8 @@ if __name__ == "__main__":
             for mail in dict_mail.keys():
                 EDL.connect_mailbox(mail, dict_mail[mail])
                 for msg in EDL.get_msg_by_date_interval(startdate, enddate):
-                    MP.save_msg(msg, path=mail+"/msg")
-                    MP.save_msg_payload(msg, dirname=mail)
+                    MP.save_msg(msg)
+                    MP.save_msg_payload(msg)
 
     elif args_list.is_all_msg_download:
         count = config.get("MODE_PARAMS", "count_msg_for_all_download", fallback=False)
@@ -436,9 +497,18 @@ if __name__ == "__main__":
                 continue
             if count:
                 for msg in EDL.get_all_msg(count):
-                    MP.save_msg(msg, path=os.path.join(mail, "msg"))
+                    MP.save_msg(msg)
             else:
                 for msg in EDL.get_all_msg():
-                    MP.save_msg(msg, path=os.path.join(mail, "msg"))
+                    MP.save_msg(msg)
+    elif args_list.is_test:
+        count = config.get("MODE_PARAMS", "count_msg_for_all_download", fallback=False)
+        for mail in dict_mail.keys():
+            if not EDL.connect_mailbox(mail, dict_mail[mail]):
+                continue
+            if count:
+                EDL.download_all_msg(count)
+            else:
+                EDL.download_all_msg()
     else:
-        pass
+        print("Для запуска программы используйте параметры командной строки. (-h для списка параметров)")
