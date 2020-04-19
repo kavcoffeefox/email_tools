@@ -1,2 +1,6 @@
 *.txt
 *.log
+.idea
+*.sqllite
+venv
+*env

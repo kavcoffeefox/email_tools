@@ -5,6 +5,7 @@ import email
 import email.message
 import mimetypes
 import logging
+import logging.config
 import traceback
 import datetime
 import os
@@ -16,6 +17,7 @@ CONFIG_FILE = "config.ini"
 DEFAULT_DATE_FORMAT = "%d.%m.%Y"
 DATE_FORMAT_FOR_IMAP = "%d-%b-%Y"
 PATH_FOR_DB = "mydb.sqllite"
+LOG_CONF_FILE_NAME = "logger.conf"
 
 
 class ParamNotSet:
@@ -337,44 +339,56 @@ def create_config(config_file_name: str):
     """
        А тут про конфиги
     """
-    config = ConfigParser()
+    temp_config = ConfigParser()
     if not os.path.exists(config_file_name):
         with open(CONFIG_FILE, "wt") as f:
-            config.add_section("SETTINGS")
-            config.set("SETTINGS", "file_with_mails", "mail.txt")
-            config.set("SETTINGS", "path_for_save_payloads", "")
-            config.set("SETTINGS", "path_for_save_msg", "")
-            config.add_section("MODE_PARAMS")
-            config.set("MODE_PARAMS", "start_date", "")
-            config.set("MODE_PARAMS", "end_date", "")
-            config.set("MODE_PARAMS", "save_msg_mode_activate", "False")
-            config.write(f)
+            temp_config.add_section("SETTINGS")
+            temp_config.set("SETTINGS", "file_with_mails", "mail.txt")
+            temp_config.set("SETTINGS", "path_for_save_payloads", "")
+            temp_config.set("SETTINGS", "path_for_save_msg", "")
+            temp_config.add_section("MODE_PARAMS")
+            temp_config.set("MODE_PARAMS", "start_date", "")
+            temp_config.set("MODE_PARAMS", "end_date", "")
+            temp_config.set("MODE_PARAMS", "save_msg_mode_activate", "False")
+            temp_config.set("MODE_PARAMS", "count_msg_for_all_download", "")
+            temp_config.write(f)
     else:
-        config.read(CONFIG_FILE)
-    return config
+        temp_config.read(CONFIG_FILE)
+    return temp_config
 
 
 if __name__ == "__main__":
     """
     Тут про логирование
     """
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger_handler = logging.FileHandler('email_loader_log.log')
-    logger_handler.setLevel(logging.DEBUG)
-    logger_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    logger_handler.setFormatter(logger_formatter)
-    logger.addHandler(logger_handler)
+    if not os.path.exists(LOG_CONF_FILE_NAME):
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.DEBUG)
+        logger_handler = logging.FileHandler('email_loader.log')
+        logger_handler.setLevel(logging.DEBUG)
+        logger_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        logger_handler.setFormatter(logger_formatter)
+        logger.addHandler(logger_handler)
+    else:
+        logging.config.fileConfig(LOG_CONF_FILE_NAME)
+        logger = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser(description=' ')
     parser.add_argument('-pdm', '--period_date_mode', action='store_true', dest='is_period_date_mode',
-                        help='флаг для работы в режиме периода')
+                        help='''флаг для работы в режиме периода''')
     parser.add_argument('-lum', '--last_uid_mode', action='store_true', dest='is_last_uid_mode',
-                        help='флаг для скачивания начиная с последнего скаченного письма')
+                        help='''флаг для скачивания начиная с последнего скаченного письма. Информации о последнем
+                        скачаном письме для каждой почты храниться в базе данных базы данных''')
     parser.add_argument('-am', '--all_msg', action='store_true', dest='is_all_msg_download',
-                        help='флаг для скачивания начиная с последнего скаченного письма')
+                        help='''флаг для скачивания всех писем начиная с конца 
+                        (количество писем может быть ограничено параметром count_msg_for_all_download)
+                        count_msg_for_all_download = 10 - озаначает, что с каждой почты будет скачано последние 10
+                        писем''')
     parser.add_argument('-ccf', '--create_config_file', action='store_true', dest='isNeedCreateDCF',
-                        help='флаг указывает на необходимость заново создать конфигурационный файл с значениями по умолчанию')
+                        help='''флаг указывает на необходимость заново создать конфигурационный файл''')
+    parser.add_argument('-lw', '--last_week', action="store_true", dest="is_lw")
+    parser.add_argument('-lm', '--last_month', action="store_true", dest="is_lm")
+    parser.add_argument('-ld', '--last_day', action="store_true", dest="is_ld")
     args_list = parser.parse_args()
 
     if args_list.isNeedCreateDCF:
@@ -403,6 +417,7 @@ if __name__ == "__main__":
             for msg in EDL.get_msg_for_last_uid(last_uid):
                 MP.save_msg_payload(msg, dirname=mail)
     elif args_list.is_period_date_mode:
+        logger.info("Работа в режиме скачавания писем согласно периода запущена!")
         startdate = config.get("MODE_PARAMS", "start_date", fallback=False)
         enddate = config.get("MODE_PARAMS", "end_date", fallback=False)
         if startdate and enddate:
