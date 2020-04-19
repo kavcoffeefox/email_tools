@@ -17,7 +17,7 @@ CONFIG_FILE = "config.ini"
 DEFAULT_DATE_FORMAT = "%d.%m.%Y"
 DATE_FORMAT_FOR_IMAP = "%d-%b-%Y"
 PATH_FOR_DB = "mydb.sqllite"
-LOG_CONF_FILE_NAME = "logger.conf"
+LOG_CONF_FILE_NAME = "logging.conf"
 
 
 class ParamNotSet:
@@ -362,7 +362,7 @@ if __name__ == "__main__":
     Тут про логирование
     """
     if not os.path.exists(LOG_CONF_FILE_NAME):
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger()
         logger.setLevel(logging.DEBUG)
         logger_handler = logging.FileHandler('email_loader.log')
         logger_handler.setLevel(logging.DEBUG)
@@ -371,7 +371,7 @@ if __name__ == "__main__":
         logger.addHandler(logger_handler)
     else:
         logging.config.fileConfig(LOG_CONF_FILE_NAME)
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger()
 
     parser = argparse.ArgumentParser(description=' ')
     parser.add_argument('-pdm', '--period_date_mode', action='store_true', dest='is_period_date_mode',
