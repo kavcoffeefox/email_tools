@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import imaplib
-import string
 import email
 import email.message
 import mimetypes
@@ -251,8 +250,8 @@ class MsgParser:
         except TypeError:
             email_message = email.message_from_bytes(msg)
         header_from = email.header.make_header(email.header.decode_header(email_message['From']))
-        logger.info("{}".format(
-             "--- нашли письмо от: " + str(header_from)))
+        logger.info("--- нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
+                                                                         h_date=self.get_msg_date(msg)))
         path = os.path.join(self.path_for_payload, login)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -262,7 +261,7 @@ class MsgParser:
                 filename = str(email.header.make_header(email.header.decode_header(filename)))
             if not filename:
                 continue
-            save_path = os.path.join(path, filename)
+            save_path = os.path.join(path, os.path.basename(filename))
             logger.info("------  нашли вложение {}".format(filename))
             try:
                 with open(save_path, 'wb') as fp:
@@ -447,7 +446,6 @@ if __name__ == "__main__":
         MP.set_downloaded_msg_path(path_for_save_msg)
     if path_for_save_payloads:
         MP.set_downloaded_payload_path(path_for_save_payloads)
-
     EDL.set_msg_parser(MP)
 
     if not path_for_email:
