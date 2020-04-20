@@ -61,6 +61,7 @@ class MsgLoader:
         else:
             logger.info("Выбрана папка {}".format(mailbox))
 
+
     def get_msg_by_date_interval(self, p_startdate, p_enddate=datetime.datetime.today()):
         if p_startdate > p_enddate:
             logger.info("Дата начала периода больше даты конца! Работа будет продолжена, но даты будут поменяны местами!")
@@ -192,6 +193,29 @@ class MsgLoader:
             logger.debug("Ошибка: ", exc_info=True)
             return False
 
+    def download_msg_by_period(self, p_startdate, p_enddate=datetime.datetime.today(),
+                               is_download_msg=True, is_download_payload=True):
+        if p_startdate > p_enddate:
+            p_startdate, p_enddate = p_enddate, p_startdate
+            logger.info(
+                "Дата начала периода больше даты конца! Работа будет продолжена, но даты будут поменяны местами!")
+        status, data = self.mail.uid('search', None, "ALL")
+        mailParser = MsgParser()
+        if status == "OK":
+            for uid_msg in data[0].split()[::-1]:
+                msg = self.get_msg_by_uid(uid_msg)
+                date_msg = datetime.datetime.strptime(create_date(mailParser.get_msg_date(msg)),
+                                                      "%a, %d %b %Y %H:%M:%S")
+                if date_msg > p_enddate:
+                    continue
+                elif date_msg >= p_startdate:
+                    if is_download_msg:
+                        self.msgParser.save_msg((uid_msg, self.login, msg))
+                        logger.debug("Письмо {uid} сохранено".format(uid=uid_msg))
+                    if is_download_payload:
+                        self.msgParser.save_msg_payload((uid_msg, self.login, msg))
+                else:
+                    break
 
 class MsgParser:
     """
@@ -240,7 +264,6 @@ class MsgParser:
             os.mkdir(save_path)
         with open(os.path.join(save_path, name_msg), "wb") as f:
             f.write(p_msg[2])
-        logger.info("Сохранено письмо!")
 
 
     def save_msg_payload(self, p_msg):
@@ -250,8 +273,6 @@ class MsgParser:
         except TypeError:
             email_message = email.message_from_bytes(msg)
         header_from = email.header.make_header(email.header.decode_header(email_message['From']))
-        logger.info("--- нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
-                                                                         h_date=self.get_msg_date(msg)))
         path = os.path.join(self.path_for_payload, login)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -261,6 +282,8 @@ class MsgParser:
                 filename = str(email.header.make_header(email.header.decode_header(filename)))
             if not filename:
                 continue
+            logger.info("--- нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
+                                                                               h_date=self.get_msg_date(msg)))
             save_path = os.path.join(path, os.path.basename(filename))
             logger.info("------  нашли вложение {}".format(filename))
             try:
@@ -412,9 +435,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=' ')
     parser.add_argument('-pdm', '--period_date_mode', action='store_true', dest='is_period_date_mode',
                         help='''флаг для работы в режиме периода''')
-    parser.add_argument('-lum', '--last_uid_mode', action='store_true', dest='is_last_uid_mode',
-                        help='''флаг для скачивания начиная с последнего скаченного письма. Информации о последнем
-                        скачаном письме для каждой почты храниться в базе данных базы данных''')
     parser.add_argument('-am', '--all_msg', action='store_true', dest='is_all_msg_download',
                         help='''флаг для скачивания всех писем начиная с конца 
                         (количество писем может быть ограничено параметром count_msg_for_all_download)
@@ -456,18 +476,7 @@ if __name__ == "__main__":
     """
         Выбор режима работы программы согласно агрументам командной строки
     """
-    if args_list.is_last_uid_mode:
-        db = ManagerStatDB()
-        db.create_connection(PATH_FOR_DB)
-        for mail in dict_mail.keys():
-            EDL.connect_mailbox(mail, dict_mail[mail])
-            last_uid = db.get_last_uid(mail)
-            if not last_uid:
-                logger.error("Не удалось получить uid последнего письма из базы, для {}".format(mail))
-                continue
-            for msg in EDL.get_msg_for_last_uid(last_uid):
-                MP.save_msg_payload(msg)
-    elif args_list.is_period_date_mode:
+    if args_list.is_period_date_mode:
         logger.info("Работа в режиме скачавания писем согласно периода запущена!")
         startdate = config.get("MODE_PARAMS", "start_date", fallback=False)
         enddate = config.get("MODE_PARAMS", "end_date", fallback=False)
@@ -481,24 +490,28 @@ if __name__ == "__main__":
                     MP.save_msg_payload(msg)
 
     elif args_list.is_all_msg_download:
+        logger.info("Работа в режиме скачивания всех писем с ящика запущена!")
         count = config.get("MODE_PARAMS", "count_msg_for_all_download", fallback=False)
         for mail in dict_mail.keys():
             if not EDL.connect_mailbox(mail, dict_mail[mail]):
                 continue
             if count:
-                for msg in EDL.get_all_msg(count):
-                    MP.save_msg(msg)
-            else:
-                for msg in EDL.get_all_msg():
-                    MP.save_msg(msg)
-    elif args_list.is_test:
-        count = config.get("MODE_PARAMS", "count_msg_for_all_download", fallback=False)
-        for mail in dict_mail.keys():
-            if not EDL.connect_mailbox(mail, dict_mail[mail]):
-                continue
-            if count:
+                logger.info("Установлено ограничение на {}!".format(count))
                 EDL.download_all_msg(count)
             else:
                 EDL.download_all_msg()
+    elif args_list.is_test:
+        logger.info("Работа в режиме скачавания писем согласно периода запущена!")
+        startdate = config.get("MODE_PARAMS", "start_date", fallback=False)
+        enddate = config.get("MODE_PARAMS", "end_date", fallback=False)
+        if startdate and enddate:
+            startdate = datetime.datetime.strptime(startdate, DEFAULT_DATE_FORMAT)
+            enddate = datetime.datetime.strptime(enddate, DEFAULT_DATE_FORMAT)
+            logger.info("Начальная дата {}, конечная дата {}!".format(startdate, enddate))
+            for mail in dict_mail.keys():
+                if not EDL.connect_mailbox(mail, dict_mail[mail]):
+                    continue
+                EDL.download_msg_by_period(startdate, enddate)
+
     else:
         print("Для запуска программы используйте параметры командной строки. (-h для списка параметров)")
