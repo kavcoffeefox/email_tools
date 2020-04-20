@@ -195,7 +195,8 @@ class MsgLoader:
             return False
 
     def create_imap_date(self, p_datestr):
-        str_date = re.findall(r'\d+\s\w\w\w\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
+        str_date = re.findall(r'\d+\s\w+\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
+        print(str_date)
         return datetime.datetime.strptime(str_date[0], "%d %b %Y %H:%M:%S")
 
     def download_msg_by_period(self, p_startdate, p_enddate=datetime.datetime.today(),
@@ -211,6 +212,7 @@ class MsgLoader:
                 msg = self.get_msg_by_uid(uid_msg)
                 date_msg = self.create_imap_date(mailParser.get_msg_date(msg))
                 if date_msg > p_enddate:
+                    logger.debug("Письмо {uid} проигнорировано".format(uid=uid_msg))
                     continue
                 elif date_msg >= p_startdate:
                     if is_download_msg:
