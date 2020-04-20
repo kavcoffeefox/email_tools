@@ -10,6 +10,7 @@ import datetime
 import os
 import sqlite3
 import argparse
+import re
 from configparser import ConfigParser
 
 CONFIG_FILE = "config.ini"
@@ -193,6 +194,10 @@ class MsgLoader:
             logger.debug("Ошибка: ", exc_info=True)
             return False
 
+    def create_imap_date(self, p_datestr):
+        str_date = re.findall(r'\d+\s\w\w\w\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
+        return datetime.datetime.strptime(str_date[0], "%d %b %Y %H:%M:%S")
+
     def download_msg_by_period(self, p_startdate, p_enddate=datetime.datetime.today(),
                                is_download_msg=True, is_download_payload=True):
         if p_startdate > p_enddate:
@@ -204,8 +209,7 @@ class MsgLoader:
         if status == "OK":
             for uid_msg in data[0].split()[::-1]:
                 msg = self.get_msg_by_uid(uid_msg)
-                date_msg = datetime.datetime.strptime(create_date(mailParser.get_msg_date(msg)),
-                                                      "%a, %d %b %Y %H:%M:%S")
+                date_msg = self.create_imap_date(mailParser.get_msg_date(msg))
                 if date_msg > p_enddate:
                     continue
                 elif date_msg >= p_startdate:
@@ -282,10 +286,9 @@ class MsgParser:
                 filename = str(email.header.make_header(email.header.decode_header(filename)))
             if not filename:
                 continue
-            logger.info("--- нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
+            logger.info("--- Нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
                                                                                h_date=self.get_msg_date(msg)))
             save_path = os.path.join(path, os.path.basename(filename))
-            logger.info("------  нашли вложение {}".format(filename))
             try:
                 with open(save_path, 'wb') as fp:
                     fp.write(part.get_payload(decode=1))
