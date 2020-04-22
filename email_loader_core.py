@@ -196,7 +196,6 @@ class MsgLoader:
 
     def create_imap_date(self, p_datestr):
         str_date = re.findall(r'\d+\s\w+\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
-        print(str_date)
         return datetime.datetime.strptime(str_date[0], "%d %b %Y %H:%M:%S")
 
     def download_msg_by_period(self, p_startdate, p_enddate=datetime.datetime.today(),
@@ -488,11 +487,11 @@ if __name__ == "__main__":
         if startdate and enddate:
             startdate = datetime.datetime.strptime(startdate, DEFAULT_DATE_FORMAT)
             enddate = datetime.datetime.strptime(enddate, DEFAULT_DATE_FORMAT)
+            logger.info("Начальная дата {}, конечная дата {}!".format(startdate, enddate))
             for mail in dict_mail.keys():
-                EDL.connect_mailbox(mail, dict_mail[mail])
-                for msg in EDL.get_msg_by_date_interval(startdate, enddate):
-                    MP.save_msg(msg)
-                    MP.save_msg_payload(msg)
+                if not EDL.connect_mailbox(mail, dict_mail[mail]):
+                    continue
+                EDL.download_msg_by_period(startdate, enddate)
 
     elif args_list.is_all_msg_download:
         logger.info("Работа в режиме скачивания всех писем с ящика запущена!")
@@ -506,17 +505,12 @@ if __name__ == "__main__":
             else:
                 EDL.download_all_msg()
     elif args_list.is_test:
-        logger.info("Работа в режиме скачавания писем согласно периода запущена!")
-        startdate = config.get("MODE_PARAMS", "start_date", fallback=False)
-        enddate = config.get("MODE_PARAMS", "end_date", fallback=False)
-        if startdate and enddate:
-            startdate = datetime.datetime.strptime(startdate, DEFAULT_DATE_FORMAT)
-            enddate = datetime.datetime.strptime(enddate, DEFAULT_DATE_FORMAT)
-            logger.info("Начальная дата {}, конечная дата {}!".format(startdate, enddate))
-            for mail in dict_mail.keys():
-                if not EDL.connect_mailbox(mail, dict_mail[mail]):
-                    continue
-                EDL.download_msg_by_period(startdate, enddate)
-
+        pass
+    elif args_list.is_ld:
+        pass
+    elif args_list.is_lw:
+        pass
+    elif args_list.is_lm:
+        pass
     else:
         print("Для запуска программы используйте параметры командной строки. (-h для списка параметров)")
