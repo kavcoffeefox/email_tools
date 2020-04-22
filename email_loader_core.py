@@ -216,7 +216,6 @@ class MsgLoader:
                 elif date_msg >= p_startdate:
                     if is_download_msg:
                         self.msgParser.save_msg((uid_msg, self.login, msg))
-                        logger.debug("Письмо {uid} сохранено".format(uid=uid_msg))
                     if is_download_payload:
                         self.msgParser.save_msg_payload((uid_msg, self.login, msg))
                 else:
@@ -263,13 +262,18 @@ class MsgParser:
         return str(email.header.make_header(email.header.decode_header(email_msg['Date'])))
 
     def save_msg(self, p_msg):
-        name_msg = "uid_"+str(int(p_msg[0])) + "_" + str(p_msg[1])
-        save_path = os.path.join(self.path_for_msg, str(p_msg[1]))
-        if not os.path.exists(save_path):
-            os.mkdir(save_path)
-        with open(os.path.join(save_path, name_msg), "wb") as f:
-            f.write(p_msg[2])
-
+        try:
+            uid = str(int(p_msg[0]))
+            name_msg = "uid_" + uid + "_" + str(p_msg[1])
+            save_path = os.path.join(self.path_for_msg, str(p_msg[1]))
+            if not os.path.exists(save_path):
+                os.mkdir(save_path)
+            with open(os.path.join(save_path, name_msg), "wb") as f:
+                f.write(p_msg[2])
+            logger.debug("Письмо {uid} сохранено".format(uid=uid))
+        except:
+            logger.error("Не удалось сохранить письмо! Письмо будет пропущено, а работа продолжена!")
+            logger.debug("Ошибка: ", exc_info=True)
 
     def save_msg_payload(self, p_msg):
         uid_msg, login, msg = p_msg
@@ -277,25 +281,26 @@ class MsgParser:
             email_message = email.message_from_string(msg)
         except TypeError:
             email_message = email.message_from_bytes(msg)
-        header_from = email.header.make_header(email.header.decode_header(email_message['From']))
-        path = os.path.join(self.path_for_payload, login)
-        if not os.path.exists(path):
-            os.makedirs(path)
-        for part in email_message.walk():
-            filename = part.get_filename()
-            if filename is not None:
-                filename = str(email.header.make_header(email.header.decode_header(filename)))
-            if not filename:
-                continue
-            logger.info("--- Нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
-                                                                               h_date=self.get_msg_date(msg)))
-            save_path = os.path.join(path, os.path.basename(filename))
-            try:
+        try:
+            header_from = email.header.make_header(email.header.decode_header(email_message['From']))
+            path = os.path.join(self.path_for_payload, login)
+            if not os.path.exists(path):
+                os.makedirs(path)
+            for part in email_message.walk():
+                filename = part.get_filename()
+                if filename is not None:
+                    filename = str(email.header.make_header(email.header.decode_header(filename)))
+                if not filename:
+                    continue
+                logger.info("--- Нашли письмо от: {h_from}. Дата: {h_date}".format(h_from=str(header_from),
+                                                                                   h_date=self.get_msg_date(msg)))
+                save_path = os.path.join(path, os.path.basename(filename))
                 with open(save_path, 'wb') as fp:
                     fp.write(part.get_payload(decode=1))
                 logger.info("------ Сохранение вложения \"{}\" завершено".format(filename))
-            except FileExistsError as e:
-                logger.error("Ошибка при создании файла приложения: {}".format(e))
+        except:
+            logger.error("Ошибка! Вложения для этого письма будут пропущены!")
+            logger.debug("Ошибка: ", exc_info=True)
 
 
 class ManagerStatDB:

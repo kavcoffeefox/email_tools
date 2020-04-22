@@ -28,10 +28,25 @@ class EmailDownloader:
     """
 
     def __init__(self):
-        pass
+        self.login = ""
 
     def connect_mailbox(self, login: str, password: str, mailbox="inbox"):
-        pass
+        self.login = login
+        if login.split("@")[1] in ["bk.ru", "inbox.ru"]:
+            mailserver = "mail.ru"
+        else:
+            mailserver = login.split('@')[1]
+
+        try:
+            self.mail = imaplib.IMAP4_SSL('imap.' + mailserver)
+            self.mail.login(login, password)
+            logger.info("Подключение к ящику {mailbox} успешно".format(mailbox=login))
+            self.set_mailbox(mailbox)
+            return True
+        except:
+            logger.error("Подключение к ящику {mailbox} не удалось. Он будет пропущен".format(mailbox=login))
+            logger.debug("Ошибка: ", exc_info=True)
+            return False
 
     def download_msg(self, uid, is_download_msg=True, is_download_payload=True):
         pass
