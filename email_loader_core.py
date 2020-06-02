@@ -239,12 +239,6 @@ class MsgLoader:
                 else:
                     break
 
-    def download_msg_by_period_test(self, p_startdate, p_enddate=datetime.datetime.today(),
-                               is_download_msg=True, is_download_payload=True):
-        for dir in self.mail.list()[1]:
-            print(dir.split()[2].decode('utf-8'))
-            self.set_mailbox(dir)
-
 class MsgParser:
     """
         Данный класс парсит письма, приводит их в более управляемы и читаемый вид
