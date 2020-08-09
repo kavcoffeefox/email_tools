@@ -30,39 +30,35 @@ class MsgLoader:
     """
 
     def __init__(self):
-        self.mail = ""
+        self.mail = ParamNotSet()
         self.msgParser = MsgParser()
         self._downloaded_msg = []
         self.login = ""
 
     def get_mail_dir(self, login: str, password: str,):
-        self.login = login
-        mailserver = login.split('@')[1]
-        if login.split("@")[1] in ["bk.ru", "inbox.ru"]:
-            mailserver = "mail.ru"
-        try:
-            self.mail = imaplib.IMAP4_SSL('imap.' + mailserver)
-            self.mail.login(login, password)
-            logger.info("Подключение к ящику {mailbox} успешно".format(mailbox=login))
+        if self.connect_mailbox(login, password):
             return self.mail.list()[1]
-        except:
-            logger.error("Подключение к ящику {mailbox} не удалось. Он будет пропущен".format(mailbox=login))
-            logger.debug("Ошибка: ", exc_info=True)
-            return False
+        else:
+            return ParamNotSet()
 
-    def connect_mailbox(self, login: str, password: str, mailbox="INBOX"):
+
+    def connect_mailbox(self, login: str, password: str, mailbox=ParamNotSet()):
+        if not isinstance(self.mail, ParamNotSet):
+            self.mail.logout()
         self.login = login
         mailserver = login.split('@')[1]
-        if login.split("@")[1] in ["bk.ru", "inbox.ru"]:
+        if login.split("@")[1] in ["bk.ru", "inbox.ru", "list.ru"]:
             mailserver = "mail.ru"
         try:
             self.mail = imaplib.IMAP4_SSL('imap.' + mailserver)
             self.mail.login(login, password)
-            logger.info("Подключение к ящику {mailbox} успешно".format(mailbox=login))
-            self.set_mailbox(mailbox)
+            if not isinstance(mailbox, ParamNotSet):
+                self.set_mailbox(mailbox)
+            else:
+                logger.info("Подключение к ящику {mailbox} успешно".format(mailbox=login))
             return True
         except:
-            logger.error("Подключение к ящику {mailbox} не удалось. Он будет пропущен".format(mailbox=login))
+            logger.error("Подключение к ящику {mailbox} не удалось.".format(mailbox=login))
             logger.debug("Ошибка: ", exc_info=True)
             return False
 
@@ -75,7 +71,7 @@ class MsgLoader:
         if status != "OK":
                logger.info("Не удалось выбрать папку {}: {}".format(mailbox, mess))
         else:
-            logger.info("Выбрана папка {}".format(mailbox))
+            logger.info("Папка успешно выбрана! Идет обработка писем, пожалуйста подождите...")
 
 
     def get_msg_by_date_interval(self, p_startdate, p_enddate=datetime.datetime.today()):
@@ -210,11 +206,11 @@ class MsgLoader:
             return False
 
     def create_imap_date(self, p_datestr):
-        try:
-            str_date = re.findall(r'\d+\s\w+\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
-            return datetime.datetime.strptime(str_date[0], "%d %b %Y %H:%M:%S")
-        except:
-            return datetime.datetime.now()
+        str_date = re.findall(r'\d+\s\w+\s\d\d\d\d\s\d\d:\d\d:\d\d', p_datestr)
+        if len(str_date) == 0:
+            return False
+        return datetime.datetime.strptime(str_date[0], "%d %b %Y %H:%M:%S")
+
 
     def download_msg_by_period(self, p_startdate, p_enddate=datetime.datetime.today(),
                                is_download_msg=True, is_download_payload=True):
@@ -228,7 +224,10 @@ class MsgLoader:
             for uid_msg in data[0].split()[::-1]:
                 msg = self.get_msg_by_uid(uid_msg)
                 date_msg = self.create_imap_date(mailParser.get_msg_date(msg))
-                if date_msg > p_enddate:
+                if not date_msg:
+                    self.msgParser.save_msg((uid_msg, self.login, msg))
+                    self.msgParser.save_msg_payload((uid_msg, self.login, msg))
+                elif date_msg > p_enddate:
                     logger.debug("Письмо {uid} проигнорировано".format(uid=uid_msg))
                     continue
                 elif date_msg >= p_startdate:
@@ -273,9 +272,6 @@ class MsgParser:
         return email_message
 
     def get_msg_date(self, p_msg):
-        """
-        TODO: обработка ошибок на неудачу при разборе кодировки заголовка
-        """
         try:
             email_msg = self.read_msg(p_msg)
             return str(email.header.make_header(email.header.decode_header(email_msg['Date'])))
@@ -298,6 +294,7 @@ class MsgParser:
 
     def save_msg_payload(self, p_msg):
         uid_msg, login, msg = p_msg
+        login = login.split("@")[0]
         try:
             email_message = email.message_from_string(msg)
         except TypeError:
@@ -492,6 +489,7 @@ if __name__ == "__main__":
     """
     path_for_save_payloads = config.get("SETTINGS", "path_for_save_payloads", fallback=False)
     path_for_save_msg = config.get("SETTINGS", "path_for_save_msg", fallback=False)
+    is_save_msg_mode = config.get("SETTINGS", "save_msg_mode_activate", fallback=True)
     if path_for_save_msg:
         MP.set_downloaded_msg_path(path_for_save_msg)
     if path_for_save_payloads:
@@ -516,13 +514,13 @@ if __name__ == "__main__":
             logger.info("Начальная дата {}, конечная дата {}!".format(startdate, enddate))
             for mail in dict_mail.keys():
                 dir_list = EDL.get_mail_dir(mail, dict_mail[mail])
-                print(dir_list)
+                if isinstance(dir_list, ParamNotSet):
+                    continue
                 for mail_dir in dir_list:
-                    EDL.mail.logout()
-                    print(mail_dir.split()[2].decode('utf-8'))
-                    if not EDL.connect_mailbox(mail, dict_mail[mail], mailbox=mail_dir.split()[2].decode('utf-8')):
+                    logger.info("Далее будет выбрана папка:" + mail_dir.decode().split(' "/" ')[0])
+                    if not EDL.connect_mailbox(mail, dict_mail[mail], mailbox=mail_dir.decode().split(' "/" ')[1]):
                         continue
-                    EDL.download_msg_by_period(startdate, enddate)
+                    EDL.download_msg_by_period(startdate, enddate, is_save_msg_mode)
 
     elif args_list.is_all_msg_download:
         logger.info("Работа в режиме скачивания всех писем с ящика запущена!")

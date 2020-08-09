@@ -8,7 +8,6 @@ import logging.config
 import traceback
 import datetime
 import os
-import sqlite3
 import argparse
 from configparser import ConfigParser
 
@@ -32,7 +31,7 @@ class EmailDownloader:
 
     def connect_mailbox(self, login: str, password: str, mailbox="inbox"):
         self.login = login
-        if login.split("@")[1] in ["bk.ru", "inbox.ru"]:
+        if login.split("@")[1] in ["bk.ru", "inbox.ru", "list.ru"]:
             mailserver = "mail.ru"
         else:
             mailserver = login.split('@')[1]
